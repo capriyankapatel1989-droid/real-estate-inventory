@@ -24,7 +24,7 @@ export default async function handler(req, res) {
                     role: 'user',
                     content: [{
                         type: 'text',
-                        text: 'Extract property data: {developer,project,location,status,handoverTimeline,paymentPlan,unitType,postHandoverOptions,availability,bedrooms,lowestPrice,highestPrice,lowestArea,highestArea,pricePerSqft,lastUpdate,furnished,nonFurnished,commission}. Return ONLY JSON array.'
+                        text: 'Extract ALL property/unit data from this file. For each unit, return JSON with: developer, project, location, status, handoverTimeline, paymentPlan, unitType, postHandoverOptions (boolean), availability (boolean), bedrooms, lowestPrice (number), highestPrice (number), lowestArea (number), highestArea (number), pricePerSqft (number), lastUpdate, furnished (boolean), nonFurnished (boolean), commission (number 0-1). Return ONLY valid JSON array, no markdown, no explanation.'
                     }, {
                         type: 'document',
                         source: { type: 'base64', media_type: mimeType, data: base64Data }
@@ -33,9 +33,14 @@ export default async function handler(req, res) {
             })
         });
 
+        if (!response.ok) {
+            const errText = await response.text();
+            return res.status(response.status).json({ error: 'API error: ' + errText });
+        }
+
         const data = await response.json();
-        res.status(200).json(data);
+        return res.status(200).json(data);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message || 'Server error' });
     }
 }
