@@ -1,21 +1,31 @@
 export default async function handler(req, res) {
+    console.log('Extract called');
+    
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log('API Key exists:', !!apiKey);
+    
     if (!apiKey) {
-        return res.status(500).json({ error: 'API key not configured' });
+        return res.status(500).json({ error: 'API key missing from environment' });
     }
 
     try {
         const { base64Data, mimeType } = req.body;
         
+        if (!base64Data) {
+            return res.status(400).json({ error: 'No file data received' });
+        }
+
+        console.log('Calling Claude API...');
+        
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey
+                'x-api-key': apiKey,
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 model: 'claude-opus-4-6',
@@ -24,23 +34,37 @@ export default async function handler(req, res) {
                     role: 'user',
                     content: [{
                         type: 'text',
-                        text: 'Extract ALL property/unit data from this file. For each unit, return JSON with: developer, project, location, status, handoverTimeline, paymentPlan, unitType, postHandoverOptions (boolean), availability (boolean), bedrooms, lowestPrice (number), highestPrice (number), lowestArea (number), highestArea (number), pricePerSqft (number), lastUpdate, furnished (boolean), nonFurnished (boolean), commission (number 0-1). Return ONLY valid JSON array, no markdown, no explanation.'
+                        text: 'Extract property data. Return JSON array only.'
                     }, {
                         type: 'document',
-                        source: { type: 'base64', media_type: mimeType, data: base64Data }
+                        source: { 
+                            type: 'base64', 
+                            media_type: mimeType, 
+                            data: base64Data 
+                        }
                     }]
                 }]
             })
         });
 
+        console.log('Claude API response status:', response.status);
+
         if (!response.ok) {
-            const errText = await response.text();
-            return res.status(response.status).json({ error: 'API error: ' + errText });
+            const errorText = await response.text();
+            console.error('Claude API error:', errorText);
+            return res.status(response.status).json({ 
+                error: 'Claude API returned ' + response.status + ': ' + errorText.substring(0, 100) 
+            });
         }
 
         const data = await response.json();
+        console.log('Claude API success');
         return res.status(200).json(data);
+        
     } catch (error) {
-        return res.status(500).json({ error: error.message || 'Server error' });
+        console.error('Extract error:', error);
+        return res.status(500).json({ 
+            error: 'Server error: ' + (error.message || 'Unknown error') 
+        });
     }
 }
