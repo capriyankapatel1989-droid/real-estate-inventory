@@ -14,40 +14,79 @@
                 this.userRole = null;
                 this.activeTab = 'dashboard';
                 this.inventory = JSON.parse(localStorage.getItem('inv') || '[]');
-                this.filters = { dev: '', loc: '', priceMin: '', priceMax: '', type: '', status: '', beds: '', furn: '' };
+                this.filters = { dev: '', loc: '', priceMin: '', priceMax: '', type: '', status: '', beds: '' };
                 this.showComm = false;
+                this.msg = '';
+                this.uploading = false;
                 this.render();
             }
             login(pwd) {
-                if (pwd === 'admin123') { this.userRole = 'admin'; this.showComm = true; }
-                else if (pwd === 'team123') { this.userRole = 'team'; this.showComm = false; }
-                else { alert('Wrong password'); return; }
+                if (pwd === 'admin123') { this.userRole = 'admin'; this.showComm = true; this.msg = ''; }
+                else if (pwd === 'team123') { this.userRole = 'team'; this.showComm = false; this.msg = ''; }
+                else { this.msg = 'Wrong password!'; }
                 this.render();
             }
-            logout() { this.userRole = null; this.render(); }
+            logout() { this.userRole = null; this.msg = ''; this.render(); }
             save() { localStorage.setItem('inv', JSON.stringify(this.inventory)); }
             async upload(file) {
-                if (!file) return;
-                alert('Processing file...');
+                if (!file) { alert('Choose file first'); return; }
+                this.uploading = true;
+                this.msg = 'Processing...';
+                this.render();
+                
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const b64 = e.target.result.split(',')[1];
                     try {
+                        this.msg = 'Extracting data with AI...';
+                        this.render();
+                        
                         const res = await fetch('/api/extract', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ base64Data: b64, mimeType: file.type })
                         });
+                        
+                        if (!res.ok) {
+                            this.msg = 'Server error: ' + res.status;
+                            this.uploading = false;
+                            this.render();
+                            return;
+                        }
+                        
                         const data = await res.json();
-                        if (data.error) { alert('Error: ' + data.error); return; }
-                        const text = data.content?.[0]?.text || '';
-                        const json = JSON.parse(text.replace(/```json|```/g, '').trim());
+                        
+                        if (data.error) {
+                            this.msg = 'API Error: ' + data.error;
+                            this.uploading = false;
+                            this.render();
+                            return;
+                        }
+                        
+                        const content = data.content || [];
+                        const textBlock = content.find(b => b.type === 'text');
+                        if (!textBlock) {
+                            this.msg = 'No data received';
+                            this.uploading = false;
+                            this.render();
+                            return;
+                        }
+                        
+                        const text = textBlock.text || '';
+                        const jsonStr = text.replace(/```json|```/g, '').trim();
+                        const json = JSON.parse(jsonStr);
                         const units = Array.isArray(json) ? json : [json];
+                        
                         this.inventory.push(...units);
                         this.save();
+                        this.msg = '✓ Extracted ' + units.length + ' units!';
+                        this.uploading = false;
                         this.render();
-                        alert('✓ Extracted ' + units.length + ' units!');
-                    } catch(err) { alert('Error: ' + err.message); }
+                    } catch(err) {
+                        this.msg = 'Error: ' + err.message;
+                        this.uploading = false;
+                        this.render();
+                    }
                 };
                 reader.readAsDataURL(file);
             }
@@ -59,18 +98,17 @@
                     if (this.filters.priceMax && u.highestPrice > parseInt(this.filters.priceMax)) return false;
                     if (this.filters.type && !u.unitType?.toLowerCase().includes(this.filters.type.toLowerCase())) return false;
                     if (this.filters.status && !u.status?.toLowerCase().includes(this.filters.status.toLowerCase())) return false;
-                    if (this.filters.beds && !u.bedrooms?.includes(this.filters.beds)) return false;
                     return true;
                 });
             }
             download() {
                 const filtered = this.filter();
-                const headers = ['Developer', 'Project', 'Location', 'Status', 'Type', 'Bedrooms', 'Price', 'Area', 'Avail'];
+                const headers = ['Developer', 'Project', 'Location', 'Status', 'Type', 'Bedrooms', 'Price', 'Avail'];
                 if (this.showComm) headers.push('Commission');
                 const rows = filtered.map(u => [
-                    u.developer, u.project, u.location, u.status, u.unitType, u.bedrooms,
-                    u.lowestPrice + '-' + u.highestPrice, u.lowestArea + '-' + u.highestArea,
-                    u.availability ? 'Yes' : 'No', this.showComm ? (u.commission * 100) : ''
+                    u.developer || '', u.project || '', u.location || '', u.status || '', u.unitType || '', u.bedrooms || '',
+                    u.lowestPrice ? (u.lowestPrice/1e6).toFixed(2) + 'M' : '', u.availability ? 'Yes' : 'No',
+                    this.showComm ? (u.commission * 100) : ''
                 ]);
                 const csv = [headers, ...rows].map(r => r.map(c => '"' + c + '"').join(',')).join('\n');
                 const a = document.createElement('a');
@@ -82,23 +120,22 @@
                 const app = document.getElementById('app');
                 if (!this.userRole) {
                     app.innerHTML = `
-                        <div class="min-h-screen bg-blue-600 flex items-center justify-center">
-                            <div class="bg-white p-8 rounded-lg shadow-lg w-96">
+                        <div class="min-h-screen bg-blue-600 flex items-center justify-center p-4">
+                            <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
                                 <h1 class="text-3xl font-bold text-center mb-2">Real Estate Inventory</h1>
                                 <p class="text-center text-gray-600 mb-8">UAE Developer Inventory System</p>
+                                ${this.msg ? `<div class="mb-4 p-3 bg-red-100 text-red-700 rounded">${this.msg}</div>` : ''}
                                 <div class="mb-6">
                                     <p class="font-semibold mb-3">Login as:</p>
                                     <label class="flex items-center mb-3">
-                                        <input type="radio" name="r" value="admin" id="r1" class="mr-2"> Admin (Full Access)
+                                        <input type="radio" name="r" value="admin" class="mr-2"> Admin (Full Access)
                                     </label>
                                     <label class="flex items-center mb-4">
-                                        <input type="radio" name="r" value="team" id="r2" class="mr-2"> Team Member
+                                        <input type="radio" name="r" value="team" class="mr-2"> Team Member
                                     </label>
                                 </div>
                                 <button onclick="window.app.login(document.querySelector('input[name=r]:checked').value === 'admin' ? 'admin123' : 'team123')" class="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700">Login</button>
-                                <p class="text-center text-gray-600 text-sm mt-6">
-                                    <strong>Admin:</strong> admin123<br/><strong>Team:</strong> team123
-                                </p>
+                                <p class="text-center text-gray-600 text-sm mt-6"><strong>Admin:</strong> admin123<br/><strong>Team:</strong> team123</p>
                             </div>
                         </div>
                     `;
@@ -107,11 +144,11 @@
                     app.innerHTML = `
                         <div class="min-h-screen bg-gray-100">
                             <header class="bg-blue-600 text-white p-4">
-                                <div class="max-w-7xl mx-auto flex justify-between">
+                                <div class="max-w-7xl mx-auto flex justify-between items-center">
                                     <h1 class="text-2xl font-bold">Real Estate Inventory</h1>
                                     <div class="flex gap-3">
-                                        ${this.userRole === 'admin' ? `<button onclick="window.app.showComm=!window.app.showComm; window.app.render()" class="bg-blue-700 px-3 py-2 rounded">${this.showComm ? '👁️ Hide' : '🚫 Show'} Commission</button>` : ''}
-                                        <button onclick="window.app.logout()" class="bg-red-500 px-3 py-2 rounded">Logout</button>
+                                        ${this.userRole === 'admin' ? `<button onclick="window.app.showComm=!window.app.showComm; window.app.render()" class="bg-blue-700 px-3 py-2 rounded text-sm">${this.showComm ? '👁️ Hide' : '🚫 Show'} Commission</button>` : ''}
+                                        <button onclick="window.app.logout()" class="bg-red-500 px-3 py-2 rounded text-sm">Logout</button>
                                     </div>
                                 </div>
                             </header>
@@ -123,57 +160,65 @@
                             </div>
                             <main class="max-w-7xl mx-auto p-6">
                                 ${this.activeTab === 'upload' ? `
-                                    <div class="bg-white p-6 rounded-lg shadow">
+                                    <div class="bg-white p-6 rounded-lg shadow max-w-2xl">
                                         <h2 class="text-xl font-bold mb-4">📥 Upload Developer File</h2>
+                                        ${this.msg ? `<div class="mb-4 p-3 rounded ${this.msg.includes('✓') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${this.msg}</div>` : ''}
                                         <div class="border-2 border-dashed p-8 text-center rounded-lg bg-gray-50">
-                                            <p class="font-semibold mb-3">Select Excel, PDF, or Image file</p>
+                                            <p class="font-semibold mb-2">Select Excel, PDF, or Image</p>
+                                            <p class="text-gray-500 text-sm mb-4">Supported: .xlsx, .pdf, .jpg, .png</p>
                                             <input type="file" id="fileInput" accept=".xlsx,.pdf,.jpg,.png,.jpeg" class="block mx-auto mb-4">
-                                            <button onclick="const f = document.getElementById('fileInput'); if(f.files[0]) window.app.upload(f.files[0]); else alert('Choose file first')" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Upload & Extract</button>
+                                            <button onclick="const f = document.getElementById('fileInput'); if(f.files[0]) window.app.upload(f.files[0]); else alert('Choose file first')" ${this.uploading ? 'disabled' : ''} class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400">${this.uploading ? 'Processing...' : 'Upload & Extract'}</button>
                                         </div>
                                     </div>
                                 ` : `
                                     <div class="space-y-6">
                                         <div class="bg-white p-6 rounded-lg shadow">
-                                            <h2 class="text-xl font-bold mb-4">🔍 Filter Results</h2>
-                                            <div class="grid grid-cols-3 gap-4">
-                                                <input type="text" placeholder="Developer" onchange="window.app.filters.dev = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <input type="text" placeholder="Location" onchange="window.app.filters.loc = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <input type="number" placeholder="Min Price" onchange="window.app.filters.priceMin = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <input type="number" placeholder="Max Price" onchange="window.app.filters.priceMax = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <select onchange="window.app.filters.status = this.value; window.app.render();" class="border rounded px-3 py-2">
+                                            <h2 class="text-lg font-bold mb-4">🔍 Filter</h2>
+                                            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                <input type="text" placeholder="Developer" onchange="window.app.filters.dev = this.value; window.app.render();" class="border rounded px-3 py-2 text-sm">
+                                                <input type="text" placeholder="Location" onchange="window.app.filters.loc = this.value; window.app.render();" class="border rounded px-3 py-2 text-sm">
+                                                <input type="number" placeholder="Min Price" onchange="window.app.filters.priceMin = this.value; window.app.render();" class="border rounded px-3 py-2 text-sm">
+                                                <input type="number" placeholder="Max Price" onchange="window.app.filters.priceMax = this.value; window.app.render();" class="border rounded px-3 py-2 text-sm">
+                                                <select onchange="window.app.filters.status = this.value; window.app.render();" class="border rounded px-3 py-2 text-sm">
                                                     <option value="">All Status</option>
                                                     <option value="Ready">Ready</option>
                                                     <option value="Under Construction">Under Construction</option>
                                                 </select>
-                                                <button onclick="window.app.download()" class="bg-green-600 text-white rounded hover:bg-green-700">⬇️ Download CSV</button>
+                                                <button onclick="window.app.download()" class="bg-green-600 text-white rounded hover:bg-green-700 text-sm">⬇️ Download</button>
                                             </div>
                                         </div>
-                                        <div class="bg-white rounded-lg shadow overflow-x-auto">
-                                            <table class="w-full text-sm">
-                                                <thead class="bg-gray-100"><tr>
-                                                    <th class="px-4 py-2 text-left">Developer</th>
-                                                    <th class="px-4 py-2 text-left">Project</th>
-                                                    <th class="px-4 py-2 text-left">Location</th>
-                                                    <th class="px-4 py-2 text-left">Type</th>
-                                                    <th class="px-4 py-2 text-left">Price Range</th>
-                                                    <th class="px-4 py-2 text-left">Status</th>
-                                                    <th class="px-4 py-2 text-left">Avail</th>
-                                                    ${this.showComm ? '<th class="px-4 py-2 text-left">Commission</th>' : ''}
-                                                </tr></thead>
-                                                <tbody>
-                                                    ${filtered.length ? filtered.map(u => `<tr class="border-b">
-                                                        <td class="px-4 py-2">${u.developer || '-'}</td>
-                                                        <td class="px-4 py-2">${u.project || '-'}</td>
-                                                        <td class="px-4 py-2">${u.location || '-'}</td>
-                                                        <td class="px-4 py-2">${u.unitType || '-'}</td>
-                                                        <td class="px-4 py-2">${u.lowestPrice ? (u.lowestPrice/1e6).toFixed(2) + 'M' : '-'}</td>
-                                                        <td class="px-4 py-2"><span class="px-2 py-1 rounded text-xs bg-green-100">${u.status || '-'}</span></td>
-                                                        <td class="px-4 py-2">${u.availability ? '✓' : '✗'}</td>
-                                                        ${this.showComm ? `<td class="px-4 py-2">${(u.commission || 0) * 100}%</td>` : ''}
-                                                    </tr>`).join('') : '<tr><td colspan="8" class="px-4 py-4 text-center text-gray-500">No data. Upload files to start.</td></tr>'}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                        ${filtered.length ? `
+                                            <div class="bg-white rounded-lg shadow overflow-x-auto">
+                                                <table class="w-full text-xs">
+                                                    <thead class="bg-gray-200"><tr>
+                                                        <th class="px-2 py-2 text-left">Developer</th>
+                                                        <th class="px-2 py-2 text-left">Project</th>
+                                                        <th class="px-2 py-2 text-left">Location</th>
+                                                        <th class="px-2 py-2 text-left">Type</th>
+                                                        <th class="px-2 py-2 text-left">Price</th>
+                                                        <th class="px-2 py-2 text-left">Status</th>
+                                                        <th class="px-2 py-2 text-left">Avail</th>
+                                                        ${this.showComm ? '<th class="px-2 py-2 text-left">Commission</th>' : ''}
+                                                    </tr></thead>
+                                                    <tbody>
+                                                        ${filtered.map(u => `<tr class="border-b hover:bg-gray-50">
+                                                            <td class="px-2 py-2">${u.developer || '-'}</td>
+                                                            <td class="px-2 py-2">${u.project || '-'}</td>
+                                                            <td class="px-2 py-2">${u.location || '-'}</td>
+                                                            <td class="px-2 py-2">${u.unitType || '-'}</td>
+                                                            <td class="px-2 py-2">${u.lowestPrice ? (u.lowestPrice/1e6).toFixed(2) + 'M' : '-'}</td>
+                                                            <td class="px-2 py-2"><span class="px-2 py-1 rounded text-xs bg-green-100">${u.status || '-'}</span></td>
+                                                            <td class="px-2 py-2">${u.availability ? '✓' : '✗'}</td>
+                                                            ${this.showComm ? `<td class="px-2 py-2">${(u.commission || 0) * 100}%</td>` : ''}
+                                                        </tr>`).join('')}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ` : `
+                                            <div class="bg-white p-12 text-center rounded-lg">
+                                                <p class="text-gray-500">No data. Upload files from Upload tab to start.</p>
+                                            </div>
+                                        `}
                                     </div>
                                 `}
                             </main>
