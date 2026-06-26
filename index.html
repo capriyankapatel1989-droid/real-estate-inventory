@@ -28,28 +28,19 @@
             save() { localStorage.setItem('inv', JSON.stringify(this.inventory)); }
             async upload(file) {
                 if (!file) return;
+                alert('Processing file...');
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const b64 = e.target.result.split(',')[1];
                     try {
                         const res = await fetch('/api/extract', {
                             method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ base64Data: b64, mimeType: file.type })
-                            body: JSON.stringify({
-                                model: 'claude-opus-4-6',
-                                max_tokens: 4096,
-                                messages: [{
-                                    role: 'user',
-                                    content: [
-                                        { type: 'text', text: 'Extract property data from file. Return JSON array with fields: developer, project, location, status, handoverTimeline, paymentPlan, unitType, postHandoverOptions, availability, bedrooms, lowestPrice, highestPrice, lowestArea, highestArea, pricePerSqft, lastUpdate, furnished, nonFurnished, commission. Return ONLY the JSON array, nothing else.' },
-                                        { type: 'document', source: { type: 'base64', media_type: file.type, data: b64 } }
-                                    ]
-                                }]
-                            })
                         });
                         const data = await res.json();
-                        if (data.error) { alert('Error: ' + data.error.message); return; }
-                        const text = data.content[0]?.text || '';
+                        if (data.error) { alert('Error: ' + data.error); return; }
+                        const text = data.content?.[0]?.text || '';
                         const json = JSON.parse(text.replace(/```json|```/g, '').trim());
                         const units = Array.isArray(json) ? json : [json];
                         this.inventory.push(...units);
@@ -145,11 +136,11 @@
                                         <div class="bg-white p-6 rounded-lg shadow">
                                             <h2 class="text-xl font-bold mb-4">🔍 Filter Results</h2>
                                             <div class="grid grid-cols-3 gap-4">
-                                                <input type="text" id="f1" placeholder="Developer" value="${this.filters.dev}" onchange="window.app.filters.dev = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <input type="text" id="f2" placeholder="Location" value="${this.filters.loc}" onchange="window.app.filters.loc = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <input type="number" id="f3" placeholder="Min Price" value="${this.filters.priceMin}" onchange="window.app.filters.priceMin = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <input type="number" id="f4" placeholder="Max Price" value="${this.filters.priceMax}" onchange="window.app.filters.priceMax = this.value; window.app.render();" class="border rounded px-3 py-2">
-                                                <select id="f5" onchange="window.app.filters.status = this.value; window.app.render();" class="border rounded px-3 py-2">
+                                                <input type="text" placeholder="Developer" onchange="window.app.filters.dev = this.value; window.app.render();" class="border rounded px-3 py-2">
+                                                <input type="text" placeholder="Location" onchange="window.app.filters.loc = this.value; window.app.render();" class="border rounded px-3 py-2">
+                                                <input type="number" placeholder="Min Price" onchange="window.app.filters.priceMin = this.value; window.app.render();" class="border rounded px-3 py-2">
+                                                <input type="number" placeholder="Max Price" onchange="window.app.filters.priceMax = this.value; window.app.render();" class="border rounded px-3 py-2">
+                                                <select onchange="window.app.filters.status = this.value; window.app.render();" class="border rounded px-3 py-2">
                                                     <option value="">All Status</option>
                                                     <option value="Ready">Ready</option>
                                                     <option value="Under Construction">Under Construction</option>
