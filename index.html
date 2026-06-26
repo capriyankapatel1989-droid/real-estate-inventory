@@ -32,9 +32,9 @@
                 reader.onload = async (e) => {
                     const b64 = e.target.result.split(',')[1];
                     try {
-                        const res = await fetch('https://api.anthropic.com/v1/messages', {
+                        const res = await fetch('/api/extract', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ base64Data: b64, mimeType: file.type })
                             body: JSON.stringify({
                                 model: 'claude-opus-4-6',
                                 max_tokens: 4096,
