@@ -63,11 +63,11 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 model: 'claude-opus-4-6',
-                max_tokens: 8192,
+                max_tokens: 16384,
                 messages: [{
                     role: 'user',
                     content: [
-                        { type: 'text', text: 'Extract property data. Return JSON array only.' },
+                        { type: 'text', text: 'Extract property data. Return ONLY a compact JSON array with no whitespace or line breaks between elements. Keep all text field values short and exact - do not add commentary.' },
                         contentBlock
                     ]
                 }]
